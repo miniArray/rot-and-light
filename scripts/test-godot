@@ -1,0 +1,59 @@
+#!/usr/bin/env -S nix shell nixpkgs#bash nixpkgs#coreutils nixpkgs#gnugrep --command bash
+# test-godot: import the Godot project headless, then run every test in
+# godot/tests/*_test.gd. Exits 1 if the import shows a script error or any
+# test fails. Needs godot4 on PATH: run it in the dev shell, for example
+# `nix run .#check` (also builds the native binding first).
+set -uo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+work=$(mktemp -d) || exit 1
+trap 'rm -rf "$work"' EXIT
+export XDG_CONFIG_HOME="$work/config"
+export XDG_DATA_HOME="$work/data"
+export XDG_CACHE_HOME="$work/cache"
+mkdir -p "$XDG_CONFIG_HOME/godot" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" || exit 1
+printf '%s\n' '[gd_resource type="EditorSettings" format=3]' '' '[resource]' \
+  'export/android/shutdown_adb_on_exit = false' \
+  >"$XDG_CONFIG_HOME/godot/editor_settings-4.7.tres"
+import_log=$work/import.log
+
+# Godot 4.7.2 can abort on the first import of a fresh tree. Retry an
+# exit failure once, but never retry or hide a reported script error.
+godot4 --headless --path godot --import >"$import_log" 2>&1
+import_status=$?
+if grep -E "SCRIPT ERROR|Parse Error|^ERROR" "$import_log"; then
+  echo "test-godot: the import reported errors" >&2
+  exit 1
+fi
+if [ "$import_status" -ne 0 ]; then
+  cat "$import_log" >&2
+  echo "test-godot: first import failed; retrying once" >&2
+  if ! godot4 --headless --path godot --import >"$import_log" 2>&1; then
+    cat "$import_log" >&2
+    echo "test-godot: the second import failed" >&2
+    exit 1
+  fi
+fi
+if grep -E "SCRIPT ERROR|Parse Error|^ERROR" "$import_log"; then
+  echo "test-godot: the import reported errors" >&2
+  exit 1
+fi
+echo "test-godot: import clean"
+
+failed=()
+for path in godot/tests/*_test.gd; do
+  name=$(basename "$path" .gd)
+  args=()
+  # The touch test needs the touch controls shown.
+  [ "$name" = touch_test ] && args=(-- --touch)
+  echo "== $name"
+  godot4 --headless --path godot --script "res://tests/$name.gd" "${args[@]}" 2>&1 |
+    grep -vE "^Godot Engine|^Initialize godot-rust|^$"
+  [ "${PIPESTATUS[0]}" -eq 0 ] || failed+=("$name")
+done
+
+if [ ${#failed[@]} -gt 0 ]; then
+  echo "test-godot: FAILED: ${failed[*]}" >&2
+  exit 1
+fi
+echo "test-godot: all tests passed"

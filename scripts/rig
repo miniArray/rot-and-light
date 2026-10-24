@@ -1,0 +1,107 @@
+#!/usr/bin/env -S nix shell nixpkgs#bash nixpkgs#coreutils nixpkgs#git nixpkgs#rsync nixpkgs#openssh --command bash
+# rig: build, test, and play Rot and Light on the rig, the machine with the GPU.
+# You edit here; the rig builds and runs.
+#
+# Configure it once in `.rig.env` at the main checkout (git ignores it):
+#   ROT_AND_LIGHT_RIG=game-rig                         # ssh host
+#   ROT_AND_LIGHT_RIG_DIR=code/sandbox/rot-and-light # checkout path on the rig, from $HOME
+#
+# A linked worktree syncs to <ROT_AND_LIGHT_RIG_DIR>/.worktree/<name> on the rig, so
+# two sessions never build in the same tree.
+set -euo pipefail
+
+tree=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
+main=$(dirname "$(git -C "$tree" rev-parse --path-format=absolute --git-common-dir)")
+
+for env_file in "$tree/.rig.env" "$main/.rig.env"; do
+  if [ -f "$env_file" ]; then
+    # shellcheck source=/dev/null
+    . "$env_file"
+    break
+  fi
+done
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/rig <command> [args]
+
+  sync           Copy this working tree to the rig (rsync, deletes stale files)
+  build [args]   sync, then cargo build on the rig
+  test [args]    sync, then cargo test on the rig
+  exec CMD...    sync, then run CMD in the dev shell on the rig
+  play [args]    sync, build, then start Godot on the rig's display
+  apk [args]     sync, export the signed Android APK on the rig, copy it to
+                 build/android/ here (first time: apk --init-signing)
+  stop           Stop the running game window
+  logs [args]    Show the game's log (journalctl args, such as -f)
+  shot           Save a screenshot of the rig's display to shots/
+EOF
+}
+
+require_rig() {
+  if [ -z "${ROT_AND_LIGHT_RIG:-}" ] || [ -z "${ROT_AND_LIGHT_RIG_DIR:-}" ]; then
+    echo "rig: set ROT_AND_LIGHT_RIG and ROT_AND_LIGHT_RIG_DIR in $main/.rig.env" >&2
+    exit 2
+  fi
+  if [ "$tree" = "$main" ]; then
+    rig_tree=$ROT_AND_LIGHT_RIG_DIR
+  else
+    rig_tree=$ROT_AND_LIGHT_RIG_DIR/.worktree/$(basename "$tree")
+  fi
+}
+
+sync() {
+  require_rig
+  # -n: keep ssh from reading our stdin.
+  ssh -n "$ROT_AND_LIGHT_RIG" mkdir -p "$(printf %q "$rig_tree")"
+  # Excluded paths are also kept safe from --delete on the rig.
+  rsync -a --delete \
+    --exclude=/.git \
+    --exclude=/target/ \
+    --exclude=/godot/.godot/ \
+    --exclude=/shots/ \
+    --exclude=/build/ \
+    --exclude=/.direnv/ \
+    --exclude=/.worktree/ \
+    --exclude=/.rig.env \
+    "$tree/" "$ROT_AND_LIGHT_RIG:$rig_tree/" >&2
+}
+
+# Run scripts/rig-side on the rig, inside the synced tree.
+on_rig() {
+  ssh -T "$ROT_AND_LIGHT_RIG" bash "$(printf '%q ' "$rig_tree/scripts/rig-side" "$rig_tree" "$@")"
+}
+
+cmd=${1:-help}
+[ $# -gt 0 ] && shift
+
+case $cmd in
+  sync) sync ;;
+  build) sync; on_rig exec cargo build "$@" ;;
+  test) sync; on_rig exec cargo test "$@" ;;
+  exec)
+    [ $# -gt 0 ] || { usage >&2; exit 2; }
+    sync; on_rig exec "$@"
+    ;;
+  play) sync; on_rig exec cargo build; on_rig play "$@" ;;
+  apk)
+    sync
+    source=$(git -C "$tree" rev-parse HEAD)
+    [ -z "$(git -C "$tree" status --porcelain)" ] || source=$source-dirty
+    on_rig apk --source "$source" "$@"
+    mkdir -p "$tree/build/android"
+    rsync -a --exclude='/export-*/' \
+      "$ROT_AND_LIGHT_RIG:$rig_tree/build/android/" "$tree/build/android/" >&2
+    echo "$tree/build/android/rot-and-light.apk"
+    ;;
+  stop | logs) require_rig; on_rig "$cmd" "$@" ;;
+  shot)
+    require_rig
+    mkdir -p "$main/shots"
+    out=$main/shots/$(date +%Y%m%d-%H%M%S).png
+    on_rig shot >"$out"
+    echo "$out"
+    ;;
+  help | -h | --help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

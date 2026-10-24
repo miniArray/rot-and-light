@@ -1,0 +1,48 @@
+[gd_resource type="Resource" script_class="Tuning" format=3]
+
+[ext_resource type="Script" path="res://game/tuning.gd" id="1_tuning"]
+
+[resource]
+script = ExtResource("1_tuning")
+lord_speed = 5.0
+lord_accel = 32.0
+lord_turn_speed = 600.0
+minion_count = 20
+horde_cap = 40
+minion_speed = 7.0
+minion_accel = 30.0
+minion_slow_radius = 1.2
+minion_spacing = 0.95
+follow_gap = 1.0
+separation_radius = 0.8
+separation_strength = 4.5
+minion_health = 30.0
+minion_health_spread = 0.3
+minion_regen = 5.0
+spore_cloud_radius = 9.0
+wither_rate = 3.0
+sprouts_min = 1
+sprouts_max = 3
+sprout_grow_time = 0.7
+lamp_light_radius = 5.0
+light_burn_rate = 6.0
+lamp_health = 58.0
+send_max_range = 22.0
+aim_snap_radius = 1.5
+crate_seek_radius = 3.0
+aim_screen_y = 0.4
+attack_damage = 1.0
+attack_interval = 0.7
+attack_reach = 0.55
+crate_health = 60.0
+camera_distance = 10.0
+camera_height = 1.6
+camera_pitch_default = -32.0
+camera_pitch_min = -70.0
+camera_pitch_max = -4.0
+mouse_sensitivity = 0.15
+stick_look_speed = 160.0
+camera_follow_sharpness = 12.0
+invert_y = false
+touch_look_sensitivity = 0.3
+touch_stick_radius = 56.0

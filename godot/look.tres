@@ -1,0 +1,65 @@
+[gd_resource type="Resource" script_class="Look" format=3]
+
+[ext_resource type="Script" path="res://game/look.gd" id="1_look"]
+
+[resource]
+script = ExtResource("1_look")
+band_low = 0.12
+band_high = 0.55
+band_mid_level = 0.5
+band_softness = 0.02
+shadow_tint = Color(0.42, 0.42, 0.58, 1)
+moon_colour = Color(0.7, 0.76, 0.92, 1)
+moon_energy = 1.0
+moon_shadows = true
+ink_colour = Color(0.07, 0.05, 0.12, 1)
+ink_width = 1.6
+ink_depth_threshold = 0.02
+ink_crease_degrees = 40.0
+ink_fade_start = 40.0
+ink_fade_end = 70.0
+sky_top = Color(0.04, 0.05, 0.1, 1)
+sky_horizon = Color(0.16, 0.13, 0.24, 1)
+bloom_strength = 0.8
+bloom_threshold = 1.0
+lord_robe = Color(0.3, 0.18, 0.4, 1)
+lord_cap = Color(0.36, 0.22, 0.52, 1)
+lord_eyes = Color(0.45, 1, 0.88, 1)
+lord_glow = 2.0
+minion_stalk = Color(0.8, 0.76, 0.84, 1)
+minion_cap = Color(0.18, 0.62, 0.62, 1)
+cap_glow = Color(0.3, 0.95, 0.85, 1)
+cap_glow_strength = 1.6
+spore_colour = Color(0.58, 0.45, 1, 1)
+spore_fill_alpha = 0.06
+spore_edge_alpha = 0.5
+rot_deep = Color(0.05, 0.16, 0.19, 1)
+rot_bloom = Color(0.24, 0.12, 0.34, 1)
+rot_speck = Color(0.4, 1, 0.85, 1)
+rot_speck_strength = 1.6
+rot_caps = 22
+lamp_colour = Color(1, 0.72, 0.38, 1)
+lamp_energy = 1.4
+lamp_back_level = 0.35
+lamp_ground = Color(1, 0.66, 0.28, 1)
+lamp_ground_alpha = 0.38
+lamp_rim = Color(1, 0.95, 0.8, 1)
+lamp_rim_width = 0.18
+flame = Color(1, 0.93, 0.78, 1)
+flame_glow = 2.5
+lamp_iron = Color(0.2, 0.18, 0.21, 1)
+burn_colour = Color(1, 0.48, 0.12, 1)
+burn_rim = 3.5
+burn_body = 1.0
+burn_flicker_hz = 7.0
+burn_shake = 0.05
+ember_rate = 14
+wither_colour = Color(0.42, 0.4, 0.35, 1)
+wither_fade = 0.9
+wither_droop_degrees = 30.0
+wither_shrink = 0.72
+ground = Color(0.36, 0.39, 0.34, 1)
+ground_lines = Color(0.3, 0.33, 0.29, 1)
+ground_cell = 2.0
+crate_wood = Color(0.5, 0.34, 0.22, 1)
+crate_hit = Color(1, 0.86, 0.62, 1)

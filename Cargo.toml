@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["crates/rot-and-light-godot"]
+
+[workspace.package]
+edition = "2021"
+version = "0.0.0"
+publish = false
+
+[workspace.dependencies]
+# Pre-1.0: pin exactly. The api feature must match the Godot binary in flake.nix.
+godot = { version = "=0.5.5", features = ["api-4-7"] }

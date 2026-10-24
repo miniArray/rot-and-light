@@ -1,0 +1,240 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://game/main.gd" id="1_main"]
+[ext_resource type="Resource" path="res://tuning.tres" id="2_tuning"]
+[ext_resource type="Script" path="res://game/dark_lord.gd" id="3_lord"]
+[ext_resource type="Script" path="res://game/camera_rig.gd" id="4_camera"]
+[ext_resource type="Script" path="res://game/aim.gd" id="5_aim"]
+[ext_resource type="Script" path="res://game/horde.gd" id="6_horde"]
+[ext_resource type="PackedScene" path="res://game/crate.tscn" id="7_crate"]
+[ext_resource type="Script" path="res://game/hud.gd" id="8_hud"]
+[ext_resource type="Shader" path="res://game/ground.gdshader" id="9_ground"]
+[ext_resource type="Script" path="res://game/touch_controls.gd" id="10_touch"]
+[ext_resource type="PackedScene" path="res://game/lamp.tscn" id="11_lamp"]
+[ext_resource type="Script" path="res://game/ground_circle.gd" id="12_circle"]
+[ext_resource type="Resource" path="res://look.tres" id="13_look"]
+[ext_resource type="Script" path="res://game/ink.gd" id="14_ink"]
+
+[sub_resource type="ProceduralSkyMaterial" id="Sky_material"]
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("Sky_material")
+
+[sub_resource type="Environment" id="Environment"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 1
+reflected_light_source = 1
+tonemap_mode = 0
+glow_blend_mode = 1
+
+[sub_resource type="BoxShape3D" id="Ground_shape"]
+size = Vector3(160, 1, 160)
+
+[sub_resource type="ShaderMaterial" id="Ground_material"]
+shader = ExtResource("9_ground")
+
+[sub_resource type="PlaneMesh" id="Ground_mesh"]
+material = SubResource("Ground_material")
+size = Vector2(160, 160)
+
+[sub_resource type="CapsuleShape3D" id="Lord_shape"]
+radius = 0.45
+height = 2.0
+
+[sub_resource type="CapsuleMesh" id="Lord_capsule"]
+radius = 0.45
+height = 2.0
+radial_segments = 24
+rings = 6
+
+[sub_resource type="BoxMesh" id="Lord_visor"]
+size = Vector3(0.5, 0.12, 0.2)
+
+[sub_resource type="SphereMesh" id="Lord_crown"]
+radius = 0.75
+height = 0.42
+radial_segments = 24
+rings = 6
+is_hemisphere = true
+
+[sub_resource type="StandardMaterial3D" id="Marker_material"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.95, 0.9, 0.5, 0.8)
+
+[sub_resource type="TorusMesh" id="Marker_ring"]
+material = SubResource("Marker_material")
+inner_radius = 0.45
+outer_radius = 0.6
+rings = 24
+ring_segments = 6
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+tuning = ExtResource("2_tuning")
+look = ExtResource("13_look")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation = Vector3(-0.87, -0.61, 0)
+shadow_enabled = true
+sky_mode = 1
+
+[node name="Ground" type="StaticBody3D" parent="."]
+
+[node name="Shape" type="CollisionShape3D" parent="Ground"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+shape = SubResource("Ground_shape")
+
+[node name="Mesh" type="MeshInstance3D" parent="Ground"]
+layers = 2
+mesh = SubResource("Ground_mesh")
+
+[node name="DarkLord" type="CharacterBody3D" parent="." node_paths=PackedStringArray("camera_rig")]
+collision_layer = 2
+collision_mask = 9
+script = ExtResource("3_lord")
+tuning = ExtResource("2_tuning")
+look = ExtResource("13_look")
+camera_rig = NodePath("../CameraRig")
+
+[node name="Shape" type="CollisionShape3D" parent="DarkLord"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+shape = SubResource("Lord_shape")
+
+[node name="Capsule" type="MeshInstance3D" parent="DarkLord"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+mesh = SubResource("Lord_capsule")
+
+[node name="Visor" type="MeshInstance3D" parent="DarkLord"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, -0.36)
+mesh = SubResource("Lord_visor")
+
+[node name="Crown" type="MeshInstance3D" parent="DarkLord"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.82, 0)
+mesh = SubResource("Lord_crown")
+
+[node name="SporeCloud" type="MeshInstance3D" parent="DarkLord"]
+script = ExtResource("12_circle")
+lift = 0.015
+softness = 0.35
+
+[node name="CameraRig" type="Node3D" parent="." node_paths=PackedStringArray("target")]
+process_priority = -10
+script = ExtResource("4_camera")
+tuning = ExtResource("2_tuning")
+target = NodePath("../DarkLord")
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+current = true
+
+[node name="Ink" type="MeshInstance3D" parent="CameraRig/Camera3D"]
+script = ExtResource("14_ink")
+look = ExtResource("13_look")
+
+[node name="Aim" type="Node3D" parent="." node_paths=PackedStringArray("camera_rig", "lord")]
+script = ExtResource("5_aim")
+tuning = ExtResource("2_tuning")
+camera_rig = NodePath("../CameraRig")
+lord = NodePath("../DarkLord")
+
+[node name="Marker" type="MeshInstance3D" parent="Aim"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
+cast_shadow = 0
+mesh = SubResource("Marker_ring")
+
+[node name="Horde" type="Node3D" parent="." node_paths=PackedStringArray("lord", "aim")]
+script = ExtResource("6_horde")
+tuning = ExtResource("2_tuning")
+look = ExtResource("13_look")
+lord = NodePath("../DarkLord")
+aim = NodePath("../Aim")
+
+[node name="Crates" type="Node3D" parent="."]
+
+[node name="Crate1" parent="Crates" instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, -12)
+
+[node name="Crate2" parent="Crates" instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 0, 7)
+
+[node name="Crate3" parent="Crates" instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 0, 4)
+
+[node name="Crate4" parent="Crates" instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0, -24)
+
+[node name="Crate5" parent="Crates" instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, -6)
+
+[node name="Crate6" parent="Crates" instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0, -26)
+
+[node name="Crate7" parent="Crates" instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 0, -14)
+
+[node name="Crate8" parent="Crates" instance=ExtResource("7_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -15, 0, 9)
+
+[node name="Lamps" type="Node3D" parent="."]
+
+[node name="Lamp1" parent="Lamps" instance=ExtResource("11_lamp")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 0, -18)
+
+[node name="Lamp2" parent="Lamps" instance=ExtResource("11_lamp")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 0, 6)
+
+[node name="Hud" type="CanvasLayer" parent="."]
+
+[node name="TouchControls" type="Control" parent="Hud" node_paths=PackedStringArray("camera_rig")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("10_touch")
+tuning = ExtResource("2_tuning")
+camera_rig = NodePath("../../CameraRig")
+
+[node name="Overlay" type="Control" parent="Hud" node_paths=PackedStringArray("aim", "horde", "touch")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("8_hud")
+aim = NodePath("../../Aim")
+horde = NodePath("../../Horde")
+touch = NodePath("../TouchControls")
+
+[node name="Status" type="Label" parent="Hud/Overlay"]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 600.0
+offset_bottom = 38.0
+
+[node name="Controls" type="Label" parent="Hud/Overlay"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -150.0
+offset_right = 520.0
+offset_bottom = -12.0
+grow_vertical = 0
+vertical_alignment = 2
+text = "WASD / left stick: move
+Mouse / right stick: camera (look up to aim further)
+Left click / RT: send the horde to the marker
+Right click / LT: recall the horde
+F5 / Back: reload tuning.tres
+Esc: free the mouse (click to capture it)"

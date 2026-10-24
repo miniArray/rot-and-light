@@ -1,0 +1,12 @@
+[package]
+name = "rot-and-light-godot"
+description = "Godot extension for Rot and Light. Game logic moves here from GDScript once it settles."
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+godot.workspace = true

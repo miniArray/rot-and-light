@@ -1,0 +1,40 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://game/crate.gd" id="1_crate"]
+[ext_resource type="Resource" path="res://tuning.tres" id="2_tuning"]
+[ext_resource type="Resource" path="res://look.tres" id="3_look"]
+
+[sub_resource type="BoxShape3D" id="Shape_crate"]
+size = Vector3(1.4, 1.4, 1.4)
+
+[sub_resource type="BoxMesh" id="Box_crate"]
+size = Vector3(1.4, 1.4, 1.4)
+
+[sub_resource type="StandardMaterial3D" id="Bar_crate"]
+shading_mode = 0
+albedo_color = Color(0.95, 0.25, 0.2, 1)
+
+[sub_resource type="BoxMesh" id="Fill_crate"]
+material = SubResource("Bar_crate")
+size = Vector3(1.2, 0.12, 0.12)
+
+[node name="Crate" type="StaticBody3D"]
+collision_layer = 8
+collision_mask = 0
+script = ExtResource("1_crate")
+tuning = ExtResource("2_tuning")
+look = ExtResource("3_look")
+
+[node name="Shape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+shape = SubResource("Shape_crate")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+mesh = SubResource("Box_crate")
+
+[node name="HealthBar" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.75, 0)
+
+[node name="Fill" type="MeshInstance3D" parent="HealthBar"]
+mesh = SubResource("Fill_crate")

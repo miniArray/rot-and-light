@@ -1,0 +1,49 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://game/minion.gd" id="1_minion"]
+
+[sub_resource type="CapsuleShape3D" id="Shape_minion"]
+radius = 0.25
+height = 0.9
+
+[sub_resource type="CapsuleMesh" id="Stalk_minion"]
+radius = 0.2
+height = 0.78
+radial_segments = 16
+rings = 4
+
+[sub_resource type="SphereMesh" id="Cap_minion"]
+radius = 0.36
+height = 0.22
+radial_segments = 20
+rings = 5
+is_hemisphere = true
+
+[sub_resource type="BoxMesh" id="Eyes_minion"]
+size = Vector3(0.24, 0.07, 0.08)
+
+[node name="Minion" type="CharacterBody3D"]
+collision_layer = 4
+collision_mask = 9
+script = ExtResource("1_minion")
+
+[node name="Shape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0)
+shape = SubResource("Shape_minion")
+
+[node name="Body" type="Node3D" parent="."]
+
+[node name="Pose" type="Node3D" parent="Body"]
+
+[node name="Stalk" type="MeshInstance3D" parent="Body/Pose"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.39, 0)
+mesh = SubResource("Stalk_minion")
+
+[node name="Cap" type="MeshInstance3D" parent="Body/Pose"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+mesh = SubResource("Cap_minion")
+
+[node name="Eyes" type="MeshInstance3D" parent="Body/Pose"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, -0.18)
+cast_shadow = 0
+mesh = SubResource("Eyes_minion")

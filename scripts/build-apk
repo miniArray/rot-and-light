@@ -1,0 +1,321 @@
+#!/usr/bin/env -S nix shell nixpkgs#python3 --command python3
+"""Export Rot and Light as a signed arm64 Android APK on this machine.
+
+Run it inside the Android toolchain: `nix run .#apk`, or
+`nix develop .#android --command python3 scripts/build-apk`. From a machine
+without the toolchain, `scripts/rig apk` runs it on the rig and copies the
+APK back.
+
+Steps: check the engine and template versions, make sure the signing key
+exists, stage a copy of godot/ without tests, debug tools, and the Rust
+extension, import and export it with Godot settings kept in a temporary
+directory, verify the APK, and write build/android/:
+
+  rot-and-light.apk         the signed APK
+  rot-and-light.apk.sha256  its SHA-256, in sha256sum format
+  manifest.json     versions, source, signer, and checks
+"""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import zipfile
+
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = ROOT / "build/android"
+SIGNING = Path.home() / ".local/share/gnarl/android-signing"
+KEY_ALIAS = "gnarl"
+PACKAGE = "dev.rotandlight.prototype"
+VERSION_NAME = "0.2.0"
+# Android refuses an update whose version code is not higher than the
+# installed one. Raise it with version/code in godot/export_presets.cfg.
+VERSION_CODE = 2
+PRESET = "Android"
+# Kept out of the APK. The Rust extension has no Android library and holds no
+# gameplay yet; tests and debug tools are not part of play.
+UNSTAGED = {".godot", "tests", "debug", "rot-and-light.gdextension", "rot-and-light.gdextension.uid"}
+
+
+class BuildError(Exception):
+    pass
+
+
+def require_env(name):
+    value = os.environ.get(name)
+    if not value:
+        raise BuildError(
+            f"{name} is not set. Run inside the Android toolchain: "
+            "`nix run .#apk` or `nix develop .#android`."
+        )
+    return value
+
+
+def run(arguments, env=None, cwd=None, secret=None):
+    """Runs a command, echoes its output (with secret redacted), and fails on
+    a non-zero exit or a Godot ERROR line."""
+    result = subprocess.run(
+        arguments, env=env, cwd=cwd, text=True, capture_output=True, timeout=900
+    )
+    output = result.stdout + result.stderr
+    if secret:
+        output = output.replace(secret, "<redacted>")
+    print(output, end="", flush=True)
+    errors = [
+        line
+        for line in output.splitlines()
+        if line.startswith(("ERROR:", "SCRIPT ERROR:", "Parse Error:"))
+    ]
+    if result.returncode or errors:
+        raise BuildError(
+            f"{Path(arguments[0]).name} failed (exit {result.returncode})"
+            + "".join("\n  " + line for line in errors)
+        )
+    return output
+
+
+def sha256(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def check_versions(godot, templates, version):
+    engine = run([godot, "--version"]).strip().splitlines()[-1]
+    if not engine.startswith(version + ".stable"):
+        raise BuildError(f"Godot is {engine}; the templates need {version}.stable")
+    template_version = (templates / "version.txt").read_text().strip()
+    if template_version != version + ".stable":
+        raise BuildError(f"Templates are {template_version}; Godot is {engine}")
+    return engine
+
+
+def signing_identity(java, initialize):
+    key = SIGNING / "release.keystore"
+    password_file = SIGNING / "password"
+    if key.exists() != password_file.exists():
+        raise BuildError(
+            f"Only half of the signing identity is in {SIGNING}. Restore the "
+            "missing file; a new key cannot update an installed APK."
+        )
+    if not key.exists():
+        if not initialize:
+            raise BuildError(
+                f"No signing key in {SIGNING}. Run once with --init-signing to create it."
+            )
+        SIGNING.mkdir(parents=True, exist_ok=True, mode=0o700)
+        SIGNING.chmod(0o700)
+        password = secrets.token_urlsafe(32)
+        descriptor = os.open(password_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w") as stream:
+            stream.write(password)
+        try:
+            run(
+                [
+                    str(java / "bin/keytool"),
+                    "-genkeypair",
+                    "-keystore", str(key),
+                    "-storetype", "PKCS12",
+                    "-alias", KEY_ALIAS,
+                    "-storepass:env", "ROT_AND_LIGHT_SIGNING_PASSWORD",
+                    "-keypass:env", "ROT_AND_LIGHT_SIGNING_PASSWORD",
+                    "-keyalg", "RSA",
+                    "-keysize", "3072",
+                    "-validity", "10000",
+                    "-dname", "CN=Rot and Light prototype",
+                ],
+                env=dict(os.environ, ROT_AND_LIGHT_SIGNING_PASSWORD=password),
+                secret=password,
+            )
+        except BuildError:
+            if not key.exists():
+                password_file.unlink()
+            raise
+        key.chmod(0o600)
+        print(f"build-apk: created the signing key in {SIGNING}; back it up privately")
+    return key, password_file.read_text().strip()
+
+
+def stage(destination, templates):
+    source = ROOT / "godot"
+    shutil.copytree(
+        source,
+        destination,
+        ignore=lambda folder, names: [
+            name for name in names if Path(folder) == source and name in UNSTAGED
+        ],
+    )
+    presets = (destination / "export_presets.cfg").read_text()
+    for mode in ("debug", "release"):
+        template = json.dumps(str(templates / f"android_{mode}.apk"))
+        presets = presets.replace(f'custom_template/{mode}=""', f"custom_template/{mode}={template}")
+    (destination / "export_presets.cfg").write_text(presets)
+
+
+def isolated_environment(work, java, sdk, version):
+    """Godot settings, cache, and data for this build only, so the build never
+    touches the machine's own Godot setup."""
+    environment = dict(os.environ)
+    for kind in ("CONFIG", "DATA", "CACHE"):
+        folder = work / kind.lower()
+        folder.mkdir(parents=True, exist_ok=True)
+        environment["XDG_" + kind + "_HOME"] = str(folder)
+    settings = {
+        "export/android/java_sdk_path": str(java),
+        "export/android/android_sdk_path": str(sdk),
+        # An editor that finds the SDK may stop the shared adb server on exit.
+        "export/android/shutdown_adb_on_exit": False,
+    }
+    editor = work / "config/godot"
+    editor.mkdir(parents=True, exist_ok=True)
+    major_minor = ".".join(version.split(".")[:2])
+    (editor / f"editor_settings-{major_minor}.tres").write_text(
+        '[gd_resource type="EditorSettings" format=3]\n\n[resource]\n'
+        + "".join(f"{key} = {json.dumps(value)}\n" for key, value in settings.items())
+    )
+    return environment
+
+
+def build_tools(sdk):
+    folders = [folder for folder in (sdk / "build-tools").iterdir() if folder.is_dir()]
+    return max(folders, key=lambda folder: tuple(int(part) for part in folder.name.split(".")))
+
+
+def verify(apk, tools, environment):
+    """Checks the APK itself. Returns facts for the manifest."""
+    with zipfile.ZipFile(apk) as archive:
+        broken = archive.testzip()
+        if broken:
+            raise BuildError("Corrupt APK member: " + broken)
+        names = archive.namelist()
+    libraries = [name for name in names if name.startswith("lib/") and not name.endswith("/")]
+    if not libraries or any(not name.startswith("lib/arm64-v8a/") for name in libraries):
+        raise BuildError("Expected arm64-v8a libraries only, found: " + ", ".join(libraries))
+    if "lib/arm64-v8a/libgodot_android.so" not in libraries:
+        raise BuildError("The Godot library is missing from the APK")
+    stray = [name for name in names if "rot_and_light_godot" in name or name.endswith(".gdextension")]
+    if stray:
+        raise BuildError("The Rust extension leaked into the APK: " + ", ".join(stray))
+
+    signature = run([str(tools / "apksigner"), "verify", "--verbose", "--print-certs", str(apk)], env=environment)
+    if not signature.startswith("Verifies"):
+        raise BuildError("apksigner did not verify the APK")
+    schemes = re.findall(r"Verified using (v\d+(?:\.\d+)?) scheme \([^)]*\): true", signature)
+    if not schemes:
+        raise BuildError("No APK signature scheme verified")
+    certificate = re.search(r"Signer #1 certificate SHA-256 digest: ([0-9a-f]+)", signature)
+
+    badging = run([str(tools / "aapt2"), "dump", "badging", str(apk)], env=environment)
+    package = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging)
+    if (not package or package.group(1) != PACKAGE or package.group(3) != VERSION_NAME
+            or int(package.group(2)) != VERSION_CODE):
+        raise BuildError("Unexpected package line: " + (package.group(0) if package else "none"))
+    permissions = re.findall(r"uses-permission: name='([^']+)'", badging)
+    if permissions:
+        raise BuildError("The APK requests permissions: " + ", ".join(permissions))
+    label = re.search(r"application-label:'([^']*)'", badging)
+    native = re.search(r"native-code: (.*)", badging)
+    return {
+        "package": package.group(1),
+        "version_code": int(package.group(2)),
+        "version_name": package.group(3),
+        "label": label.group(1) if label else None,
+        "native_code": native.group(1).strip() if native else None,
+        "permissions": permissions,
+        "signature_schemes": schemes,
+        "signer_sha256": certificate.group(1) if certificate else None,
+        "libraries": libraries,
+        "bytes": apk.stat().st_size,
+        "sha256": sha256(apk),
+    }
+
+
+def source_revision(given):
+    if given:
+        return given
+    try:
+        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown (not a git checkout)"
+    return revision + ("-dirty" if dirty else "")
+
+
+def build(initialize, source):
+    godot = require_env("ROT_AND_LIGHT_GODOT")
+    version = require_env("ROT_AND_LIGHT_GODOT_VERSION")
+    templates = Path(require_env("ROT_AND_LIGHT_ANDROID_TEMPLATES"))
+    java = Path(require_env("JAVA_HOME"))
+    sdk = Path(require_env("ANDROID_HOME"))
+    engine = check_versions(godot, templates, version)
+    key, password = signing_identity(java, initialize)
+    tools = build_tools(sdk)
+
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="export-", dir=OUTPUT) as temporary:
+        work = Path(temporary)
+        project = work / "project"
+        stage(project, templates)
+        environment = isolated_environment(work, java, sdk, version)
+        environment.update(
+            GODOT_ANDROID_KEYSTORE_RELEASE_PATH=str(key),
+            GODOT_ANDROID_KEYSTORE_RELEASE_USER=KEY_ALIAS,
+            GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=password,
+        )
+        importing = [godot, "--headless", "--path", str(project), "--import"]
+        try:
+            run(importing, env=environment, secret=password)
+        except BuildError:
+            # Godot 4.7.2 can abort on the first import of a fresh tree,
+            # after it has written what the second import needs.
+            print("build-apk: first import failed; retrying once", flush=True)
+            run(importing, env=environment, secret=password)
+        candidate = work / "rot-and-light.apk"
+        run(
+            [godot, "--headless", "--path", str(project), "--export-release", PRESET, str(candidate)],
+            env=environment,
+            secret=password,
+        )
+        if not candidate.is_file():
+            raise BuildError("Godot reported success but wrote no APK")
+        facts = verify(candidate, tools, environment)
+        apk = OUTPUT / "rot-and-light.apk"
+        candidate.replace(apk)
+
+    (OUTPUT / "rot-and-light.apk.sha256").write_text(f"{facts['sha256']}  rot-and-light.apk\n")
+    manifest = {
+        **facts,
+        "engine": engine,
+        "templates": {name: sha256(templates / name) for name in ("android_debug.apk", "android_release.apk")},
+        "build_tools": tools.name,
+        "source": source_revision(source),
+        "build_host": socket.gethostname(),
+        "signing_key": str(key),
+        "rust_extension": "excluded: no Android library",
+        "device_tested": False,
+    }
+    (OUTPUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    print(f"build-apk: {apk}\nbuild-apk: sha256 {facts['sha256']}", flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--init-signing", action="store_true", help="create the signing key if it does not exist")
+    parser.add_argument("--source", help="source revision to record, when this tree is not a git checkout")
+    args = parser.parse_args()
+    try:
+        build(args.init_signing, args.source)
+    except BuildError as error:
+        print(f"build-apk: {error}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

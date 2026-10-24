@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# rig-side: the half of scripts/rig that runs on the rig. scripts/rig calls it
+# over ssh as: rig-side <tree> <command> [args]. Do not run it by hand.
+set -euo pipefail
+
+tree=$(cd "$1" && pwd)
+cmd=$2
+shift 2
+cd "$tree"
+
+unit=rot-and-light-play
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+
+# The dev shell. A path flake copies its whole folder into the Nix store, and
+# this tree is not a git repository on the rig, so evaluate a copy of only the
+# flake files. target/ is a safe home: rsync and git both skip it.
+shell=$tree/target/rig-shell
+mkdir -p "$shell"
+cp flake.nix flake.lock "$shell/"
+in_shell() {
+  nix develop "path:$shell" --command "$@"
+}
+
+# The compositor's Wayland socket, such as wayland-1.
+wayland_display() {
+  local socket
+  for socket in "$XDG_RUNTIME_DIR"/wayland-*; do
+    case $socket in *.lock) continue ;; esac
+    [ -S "$socket" ] && { basename "$socket"; return; }
+  done
+  echo "rig-side: no Wayland socket in $XDG_RUNTIME_DIR; is anyone logged in?" >&2
+  return 1
+}
+
+case $cmd in
+  exec) in_shell "$@" ;;
+  play)
+    display=$(wayland_display)
+    # Godot loads GDExtensions only from .godot/extension_list.cfg, which an
+    # import writes. A fresh tree has none, so import before every run.
+    # Godot 4.7.2 aborts in EditorHelp::_gen_extensions_docs on the first
+    # import of a fresh tree, after it has written the file. The second import
+    # succeeds, so retry once.
+    in_shell godot4 --headless --path godot --import >&2 ||
+      in_shell godot4 --headless --path godot --import >&2
+    systemctl --user stop "$unit" 2>/dev/null || true
+    systemctl --user reset-failed "$unit" 2>/dev/null || true
+    # A transient user unit outlives this ssh session and keeps the log.
+    systemd-run --user --unit="$unit" --collect --quiet \
+      --working-directory="$tree" \
+      -E XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+      -E WAYLAND_DISPLAY="$display" \
+      -E DISPLAY=:0 \
+      "$(command -v nix)" develop "path:$shell" --command godot4 --path godot "$@"
+    echo "rig-side: started $unit; see scripts/rig logs" >&2
+    ;;
+  apk)
+    nix develop "path:$shell#android" --command python3 scripts/build-apk "$@"
+    ;;
+  stop) systemctl --user stop "$unit" ;;
+  logs) journalctl --user -u "$unit" --no-pager -n 200 "$@" ;;
+  shot)
+    WAYLAND_DISPLAY=$(wayland_display) nix shell nixpkgs#grim --command grim -
+    ;;
+  *)
+    echo "rig-side: unknown command $cmd" >&2
+    exit 2
+    ;;
+esac

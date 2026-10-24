@@ -1,0 +1,79 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://game/lamp.gd" id="1_lamp"]
+[ext_resource type="Resource" path="res://tuning.tres" id="2_tuning"]
+[ext_resource type="Script" path="res://game/ground_circle.gd" id="3_circle"]
+[ext_resource type="Resource" path="res://look.tres" id="4_look"]
+[ext_resource type="Script" path="res://game/rot.gd" id="5_rot"]
+
+[sub_resource type="CylinderShape3D" id="Shape_lamp"]
+radius = 0.45
+height = 3.0
+
+[sub_resource type="CylinderMesh" id="Post_lamp"]
+top_radius = 0.12
+bottom_radius = 0.18
+height = 3.0
+radial_segments = 16
+
+[sub_resource type="CylinderMesh" id="Base_lamp"]
+top_radius = 0.3
+bottom_radius = 0.45
+height = 0.4
+radial_segments = 16
+
+[sub_resource type="SphereMesh" id="Top_lamp"]
+radius = 0.35
+height = 0.7
+
+[sub_resource type="StandardMaterial3D" id="Bar_lamp"]
+shading_mode = 0
+albedo_color = Color(0.95, 0.25, 0.2, 1)
+
+[sub_resource type="BoxMesh" id="Fill_lamp"]
+material = SubResource("Bar_lamp")
+size = Vector3(1.2, 0.12, 0.12)
+
+[node name="Lamp" type="StaticBody3D"]
+collision_layer = 8
+collision_mask = 0
+script = ExtResource("1_lamp")
+look = ExtResource("4_look")
+tuning = ExtResource("2_tuning")
+
+[node name="Shape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+shape = SubResource("Shape_lamp")
+
+[node name="Post" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+mesh = SubResource("Post_lamp")
+
+[node name="Base" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
+mesh = SubResource("Base_lamp")
+
+[node name="Top" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.2, 0)
+cast_shadow = 0
+mesh = SubResource("Top_lamp")
+
+[node name="Glow" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.2, 0)
+light_cull_mask = 4294967293
+omni_range = 5.7
+
+[node name="Light" type="MeshInstance3D" parent="."]
+script = ExtResource("3_circle")
+lift = 0.03
+softness = 0.01
+
+[node name="Rot" type="MeshInstance3D" parent="."]
+script = ExtResource("5_rot")
+look = ExtResource("4_look")
+
+[node name="HealthBar" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.9, 0)
+
+[node name="Fill" type="MeshInstance3D" parent="HealthBar"]
+mesh = SubResource("Fill_lamp")

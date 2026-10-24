@@ -1,0 +1,14 @@
+# Build output
+/target/
+/build/
+/godot/.godot/
+*.import
+
+# Local environment
+.direnv/
+/.worktree/
+/.worktrees/
+# The rig's ssh host and path. See scripts/rig.
+/.rig.env
+# Screenshots from scripts/rig shot
+/shots/
